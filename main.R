@@ -1,7 +1,7 @@
 seed <- 1
 iter <- 1
 n <- 500
-N <- 1000
+N <- 500
 d <- 10
 M <- 2
 setting <- "strong"
@@ -94,17 +94,29 @@ Y_label <- Y[1:n]
 
 
 
+######### SL #########
 
+SL_res <- SL(X_label, Y_label)
 
 
 ######### SASH #########
 
+SASH_res <- SASH(X_label, Y_label, X_lst, S_lst)
 
-SASH_res = SASH(X_label,Y_label,X_lst,S_lst)
 
+######### SASH without step I #########
 
+SASH_wo_stepI_res <- SASH_wo_stepI(X_lst, S_lst)
+  
+  
 ######### IPD #########
 
-IPD_res = IPD(X_label,Y_label,X_lst,S_lst)
+IPD_res <- IPD(X_label, Y_label, X_lst, S_lst)
+
+
+######### SS-uLASSO #########
+
+SSuLASSO_res <- SSuLASSO(X_label, Y_label, X, S)
+
 
 
