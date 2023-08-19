@@ -1,4 +1,3 @@
-
 # Loading necessary libraries
 library(glmnet)
 library(MASS)
@@ -259,19 +258,14 @@ debias2 <- function(beta_fit, beta_star, X_label, n_lst, tau_lst = NULL){
 }
 
 
-
-
-
-SASH <- function(X_label, Y_label, X_lst, S_lst) {
+SL <- function(X_label, Y_label) {
   
-  #### SL ####
   cvfit <- cv.glmnet(
     X_label,
     Y_label,
     family = "binomial",
     alpha = 1
   )
-  
   
   
   if (coef(cvfit, s = "lambda.min")[2] != 0) {
@@ -303,7 +297,7 @@ SASH <- function(X_label, Y_label, X_lst, S_lst) {
   
   SL <- c(beta_initial[1], beta_initial[-1][index])
   
-  #### debias ####
+
   deb_res <- debias2(
     beta_fit = t(t(beta_initial)),
     beta_star,
@@ -318,6 +312,52 @@ SASH <- function(X_label, Y_label, X_lst, S_lst) {
   SL_var <- as.numeric(c(deb_res[[2]][1], deb_res[[2]][-1][index]))
   SL_LB <- as.numeric(c(deb_res[[5]][1], deb_res[[5]][-1][index]))
   SL_UB <- as.numeric(c(deb_res[[6]][1], deb_res[[6]][-1][index]))
+  
+  return(list(
+    SL, SL_test, SL_cover, SL_deb, SL_var, SL_LB, SL_UB
+  ))
+  
+}
+
+
+SASH <- function(X_label, Y_label, X_lst, S_lst) {
+  
+  cvfit <- cv.glmnet(
+    X_label,
+    Y_label,
+    family = "binomial",
+    alpha = 1
+  )
+  
+  
+  if (coef(cvfit, s = "lambda.min")[2] != 0) {
+    index0 <- 1
+  } else {
+    index0 <- order(abs(coef(cvfit, s = "lambda.min"))[2:3], decreasing = T)[1]
+  }
+  
+  index <- 1:d
+  index[index0] <- 1
+  index[1] <- index0
+  
+  beta_initial <- coef(cvfit, s = "lambda.min")[-1][index]
+  
+  gamma_initial <- matrix(
+    beta_initial / ifelse(beta_initial[1] == 0, 1, beta_initial[1])
+  )
+  gamma_initial[1] <- 1
+  
+  beta_initial <- c(coef(cvfit, s = "lambda.min")[1], beta_initial)
+  
+  X_label <- X_label[, index]
+  for (m in 1:M) {
+    X_lst[[m]] <- X_lst[[m]][, index]
+    X_lst[[m]] <- as.matrix(X_lst[[m]])
+  }
+  
+  X <- X[, index]
+  
+  SL <- c(beta_initial[1], beta_initial[-1][index])
   
   beta_label <- c(coef(cvfit, s = "lambda.min")[1], coef(cvfit, s = "lambda.min")[-1][index])
   
@@ -557,7 +597,6 @@ SASH <- function(X_label, Y_label, X_lst, S_lst) {
   
     
     return(list(
-      SL, SL_test, SL_cover, SL_deb, SL_var, SL_LB, SL_UB,
       SASH, SASH_test, SASH_cover, SASH_deb, SASH_var, SASH_LB, SASH_UB
     ))
   
@@ -566,280 +605,325 @@ SASH <- function(X_label, Y_label, X_lst, S_lst) {
 
 
 
-
 IPD <- function(X_label, Y_label, X_lst, S_lst) {
   
-  cvfit=cv.glmnet(X_label,Y_label,
-                  # lambda=seq(0.05,1.5,0.01)*sqrt(log(d)/n),
-                  family="binomial",alpha=1)
-
-  if(coef(cvfit, s="lambda.min")[2] != 0) {
-    index0 = 1
+  cvfit <- cv.glmnet(X_label, Y_label,
+                     family = "binomial", 
+                     alpha = 1)
+  
+  if (coef(cvfit, s = "lambda.min")[2] != 0) {
+    index0 <- 1
   } else {
-    index0=order(abs(coef(cvfit, s="lambda.min"))[2:3],
-                 decreasing = T)[1]
-  }
-  index0
-  index=1:d
-  index[index0]=1
-  index[1]=index0
-  index[1:10]
-  
-  beta_initial=coef(cvfit, s="lambda.min")[-1][index]
-  
-  gamma_initial=matrix(beta_initial/ifelse(beta_initial[1]==0,1,beta_initial[1]))
-  gamma_initial[1]=1
-  c(gamma_initial)[1:10]
-  dim(gamma_initial)
-  
-  beta_initial = c(coef(cvfit, s="lambda.min")[1], beta_initial)
-
-  
-  
-  X_label=X_label[,index]
-  for(m in 1:M){
-    X_lst[[m]]=X_lst[[m]][,index]
-    X_lst[[m]]=as.matrix(X_lst[[m]])
+    index0 <- order(abs(coef(cvfit, s = "lambda.min"))[2:3], decreasing = T)[1]
   }
   
-  X= X[,index]
+  index <- 1:d
+  index[index0] <- 1
+  index[1] <- index0
   
-
-  beta=c(gamma_initial)
-  beta_pool=NULL
-  cat("iter",iter,"\n")
-  for (t in 1:(iter)){
-    cat("t =",t,"\n")
-    
+  beta_initial <- coef(cvfit, s = "lambda.min")[-1][index]
   
-    w=AA=BB=NULL
-    lambda_final=sigma.square_final=NULL
-    for (m in 1:M){
-      cat("m=",m, "\n") 
-      
-      h=c((maxh)*sqrt(log(N_lst[m])/N_lst[m]))
-      
-      X_m=X_lst[[m]]
-      S_m=S_lst[[m]]
-      A=apply(X_m,1,function(o){f_hat(X_m,o,beta,S_m,h)})
-      B=apply(X_m,1,function(o){f_hat_grad(X_m,o,beta,S_m,h)})
-      AA=c(AA,A)
-      BB=cbind(BB,B)
-      if(m<=(M/2)){
-        ww=rep(1,length(A))
-      }else{
-        ww=(1/(A*(1-A)))
-      }
-      w=c(w,ww)
-      w[abs(w)>100]=100
-      
-      
-      sigma.square=mean(ww*(S_m-A)^2)
-      sigma.square_final=c(sigma.square_final,
-                           sigma.square)
-      
+  gamma_initial <- matrix(beta_initial / ifelse(beta_initial[1] == 0, 1, beta_initial[1]))
+  gamma_initial[1] <- 1
   
-    }
-    
- 
-    
-    XX=diag(sqrt(w))%*%t(BB[-1,])
+  beta_initial <- c(coef(cvfit, s = "lambda.min")[1], beta_initial)
   
-    YY = diag(sqrt(w))%*%c(S-AA+t(beta)%*%BB-BB[1,])
- 
+  X_label <- X_label[, index]
+  for (m in 1:M) {
+    X_lst[[m]] <- X_lst[[m]][, index]
+    X_lst[[m]] <- as.matrix(X_lst[[m]])
+  }
+  
+  X <- X[, index]
+  
+  beta <- c(gamma_initial)
+  beta_pool <- NULL
+  
+  cat("iter", iter, "\n")
+  
+  for (t in 1:(iter)) {
+    cat("t =", t, "\n")
     
-    loss_IPD=function(b,YYY,XXX,lamb,N_lst,weight,sigma.square_final){
-      # b: length d-1
-      b=matrix(b)
-      pro=weight*(YYY-XXX%*%b)^2
-      result_IPD=NULL
-      for(m in 1:length(N_lst)){
-        avg=mean(pro[((m-1)*N+1):(m*N)])
-       
-        result_IPD=c(result_IPD,
-                     N_lst[m]*(avg)/sigma.square_final[m])
+    w <- AA <- BB <- NULL
+    lambda_final <- sigma.square_final <- NULL
+    
+    for (m in 1:M) {
+      cat("m=", m, "\n") 
+      
+      h <- c((log(N_lst[m]) / N_lst[m])^(1/5))
+      X_m <- X_lst[[m]]
+      S_m <- S_lst[[m]]
+      A <- apply(X_m, 1, function(o) { f_hat(X_m, o, beta, S_m, h) })
+      B <- apply(X_m, 1, function(o) { f_hat_grad(X_m, o, beta, S_m, h) })
+      AA <- c(AA, A)
+      BB <- cbind(BB, B)
+      
+      if (m <= (M / 2)) {
+        ww <- rep(1, length(A))
+      } else {
+        ww <- (1 / (A * (1 - A)))
       }
       
+      w <- c(w, ww)
+      w[abs(w) > 100] <- 100
       
-      return(sum(result_IPD)+
-               (length(b)-sum(abs(b)<1e-8))*log(sum(N_lst)))
-      
+      sigma.square <- mean(ww * (S_m - A)^2)
+      sigma.square_final <- c(sigma.square_final, sigma.square)
     }
     
+    XX <- diag(sqrt(w)) %*% t(BB[-1, ])
+    YY <- diag(sqrt(w)) %*% c(S - AA + t(beta) %*% BB - BB[1, ])
     
-    BIC_step2=NULL
-    beta_step2=NULL
-    lambda_lst=0.005*(1:400)*sqrt(log(d)/N)
-    B1=B2=NULL
-    for (lambda in lambda_lst){
+    loss_IPD <- function(b, YYY, XXX, lamb, N_lst, weight, sigma.square_final) {
+      b <- matrix(b)
+      pro <- weight * (YYY - XXX %*% b)^2
+      result_IPD <- NULL
       
-      cv.result=glmnet(t(BB[-1,]),c(S-AA+t(beta)%*%BB-BB[1,]),
-                       weights=w,family="gaussian",
-                       lambda=lambda,
-                       alpha=1,intercept = FALSE)
-      # plot(cv.result)
+      for (m in 1:length(N_lst)) {
+        avg <- mean(pro[((m - 1) * N + 1):(m * N)])
+        result_IPD <- c(result_IPD, N_lst[m] * (avg) / sigma.square_final[m])
+      }
       
-      beta_new=coef(cv.result, s="lambda.min")[-1]
-
-      BIC_step2=c(BIC_step2,
-                  loss_IPD(beta_new,
-                           c(S-AA+t(beta)%*%BB-BB[1,]),
-                           t(BB[-1,]),
-                           lamb=lambda
-                           ,N_lst,w,sigma.square_final))
-      beta_step2=cbind(beta_step2,beta_new)
+      return(sum(result_IPD) + (length(b) - sum(abs(b) < 1e-8)) * log(sum(N_lst)))
+    }
+    
+    BIC_step2 <- NULL
+    beta_step2 <- NULL
+    lambda_lst <- 0.005 * (1:400) * sqrt(log(d) / N)
+    B1 <- B2 <- NULL
+    
+    for (lambda in lambda_lst) {
+      cv.result <- glmnet(t(BB[-1, ]), c(S - AA + t(beta) %*% BB - BB[1, ]), 
+                          weights = w, 
+                          family = "gaussian", 
+                          lambda = lambda, 
+                          alpha = 1, 
+                          intercept = FALSE)
       
-    } 
+      beta_new <- coef(cv.result, s = "lambda.min")[-1]
+      BIC_step2 <- c(BIC_step2, loss_IPD(beta_new, 
+                                         c(S - AA + t(beta) %*% BB - BB[1, ]), 
+                                         t(BB[-1, ]), 
+                                         lamb = lambda, 
+                                         N_lst, w, sigma.square_final))
+      beta_step2 <- cbind(beta_step2, beta_new)
+    }
     
-
-    IPD_lambda=lambda_lst[which.min(BIC_step2)]
-    # print(lambda_lst[which.min(BIC_step2)]/sqrt(log(d)/N))
-    beta=c(1,beta_step2[,which.min(BIC_step2)])
+    IPD_lambda <- lambda_lst[which.min(BIC_step2)]
+    beta <- c(1, beta_step2[, which.min(BIC_step2)])
+    beta_pool <- cbind(beta_pool, beta)
     
-    
-    beta_pool=cbind(beta_pool,beta)
-    
-  
-  
-    # beta
-    fit_last=glm(Y_label~X_label%*%beta,family="binomial")
-
-
-    POOLED=c(fit_last[[1]][1],fit_last[[1]][2]*beta)
-    
-  } # end iter
-  dim(XX)
-  dim(YY)
-  
-  
-  Grad=Hess=NULL
-  
-  for (m in 1:M){
-    Grad[[m]]=grad(X_lst[[m]],S_lst[[m]],beta,h,m,N)
-    Hess[[m]]=hess(X_lst[[m]],S_lst[[m]],beta,h,m,N)
-    
-  } # end m
-  
-  
-  dim(Grad[[1]])
-  dim(Hess[[1]])
-  
-  
-  Grad_pool=Hess_pool=0
-  for(m in 1:M){
-   
-    Grad_pool=Grad_pool+Grad[[m]]*N
-    Hess_pool=Hess_pool+Hess[[m]]*N
+    fit_last <- glm(Y_label ~ X_label %*% beta, family = "binomial")
+    POOLED <- c(fit_last[[1]][1], fit_last[[1]][2] * beta)
   }
   
-  Hess_pool[1:5,1:5]
-  eigen(Hess_pool)$values
-  
-
-  N_lst = rep(N,M)
-
-  
-  fit=glm(Y_label~X_label%*%beta,
-          #family="binomial",
-          family="binomial")
-  print(fit[[1]])
-  
-  beta_tilde=beta
-  for(t in 1:(iter)){
-    a_tilde=fit[[1]][1]
-    b_tilde=fit[[1]][2]
-    
-    H_tilde=0
-    for(j in 1:n){
-      o=X_label[j,]
-      H_tilde=H_tilde+
-        c(b_tilde^2*g_grad(a_tilde+b_tilde*(o%*%beta_tilde)))*(o%*%t(o))
-    }
-    H_tilde[1:6,1:6]
-    eigen(H_tilde)$values
-    H_tilde=0.5*H_tilde
-    
-    xi_tilde=2*H_tilde%*%beta_tilde
-    for(j in 1:n){
-      o=X_label[j,]
-      xi_tilde=xi_tilde+
-        c(Y_label[j]-g(a_tilde+b_tilde*(o%*%beta_tilde)))*b_tilde*o
-    }
-    
-    Hess_final=Hess_pool+H_tilde
-    Grad_final=Grad_pool+0.5*xi_tilde
-    
-    vec=eigen(Hess_final[-1,-1])$vectors
-    
-    value=eigen(Hess_final[-1,-1])$values
-    value[abs(value)<1e-10]=0
-    
-    XX=diag(sqrt(value))%*%t(vec)
-    YY=solve(t(XX))%*%(Grad_final[-1]-Hess_final[-1,1])
-    
-    BIC=NULL
-    beta_step3=NULL
-    for(lambda in 0.003*(1:2000)*sqrt(log(d)/N) ){
-      model=glmnet(XX,YY,family="gaussian",
-                   lambda =lambda,intercept = FALSE)
-      # print(as.vector(round(model$beta,4)))
-      bb=model$beta
-      bb[1:15]
-      beta_step3=cbind(beta_step3,bb)
-      # print(length(bb)-sum(abs(bb)<1e-8))
-      
-      
-      
-      BIC=c(BIC,
-            (length(bb)-sum(abs(bb)<1e-8))*log(n+sum(N_lst))+
-              (n+sum(N_lst))*(loss_step3(model$beta,
-                                         Grad_final,Hess_final,lambda, n, N_lst)))
-      
-    }
- 
-    
-    beta_tilde=c(1,c(beta_step3[,which.min(BIC)]))
-    
-    fit=glm(Y_label~X_label%*%beta_tilde,
-            family="binomial")
-    print(fit[[1]])
-    
+  Grad <- Hess <- NULL
+  for (m in 1:M) {
+    Grad[[m]] <- grad(X_lst[[m]], S_lst[[m]], beta, h, m, N)
+    Hess[[m]] <- hess(X_lst[[m]], S_lst[[m]], beta, h, m, N)
   }
   
+  Grad_pool <- Hess_pool <- 0
+  for (m in 1:M) {
+    Grad_pool <- Grad_pool + Grad[[m]] * N
+    Hess_pool <- Hess_pool + Hess[[m]] * N
+  }
   
+  N_lst <- rep(N, M)
+  fit <- glm(Y_label ~ X_label %*% beta, family = "binomial")
   
-  a_final=fit[[1]][1]
-  b_final=fit[[1]][2]
-  beta_dir_final=beta_tilde
-  matrix=NULL
-  matrix=rbind(matrix,c(a_final,b_final*beta_dir_final))
+  beta_tilde <- beta
+  for (t in 1:(iter)) {
+    a_tilde <- fit[[1]][1]
+    b_tilde <- fit[[1]][2]
+    H_tilde <- 0
+    
+    for (j in 1:n) {
+      o <- X_label[j, ]
+      H_tilde <- H_tilde + c(b_tilde^2 * g_grad(a_tilde + b_tilde * (o %*% beta_tilde))) * (o %*% t(o))
+    }
+    
+    H_tilde <- 0.5 * H_tilde
+    xi_tilde <- 2 * H_tilde %*% beta_tilde
+    
+    for (j in 1:n) {
+      o <- X_label[j, ]
+      xi_tilde <- xi_tilde + c(Y_label[j] - g(a_tilde + b_tilde * (o %*% beta_tilde))) * b_tilde * o
+    }
+    
+    Hess_final <- Hess_pool + H_tilde
+    Grad_final <- Grad_pool + 0.5 * xi_tilde
+    vec <- eigen(Hess_final[-1, -1])$vectors
+    value <- eigen(Hess_final[-1, -1])$values
+    value[abs(value) < 1e-10] <- 0
+    XX <- diag(sqrt(value)) %*% t(vec)
+    YY <- solve(t(XX)) %*% Grad_final[-1]
+    
+    beta_new <- c(1, as.numeric(coef(glmnet(t(XX), YY, 
+                                            family = "gaussian", 
+                                            lambda = 1, 
+                                            alpha = 1, 
+                                            intercept = FALSE), s = "lambda.min")[-1]))
+    
+    fit <- glm(Y_label ~ X_label %*% beta, family = "binomial")
+    beta <- c(1, solve(t(XX) %*% XX) %*% (t(XX) %*% YY + beta_new[-1]))
+    beta_tilde <- beta
+  }
   
-  beta_dagger=NULL
-  beta_dagger=rbind(beta_dagger,beta_dir_final)
-  
-  IPD=c(matrix[1,1],matrix[1,-1][index])
-  
-  
+  return(beta)
+}
 
-  deb_res = debias2(beta_fit =  t(matrix), 
+
+
+SSuLASSO <- function(X_label, Y_label, X, S) {
+  
+  Quantile <- 2
+  temp = quantile(S, c(Quantile/100, 1 - Quantile/100))
+  ind = (S <= temp[1]) | (S >= temp[2])
+  
+  S_extreme = S[ind]
+  Y_extreme = c(as.numeric(S[ind] >= temp[2]), Y_label)
+  X_extreme = rbind(X[ind, ], X_label)
+  
+  cvfit5 = cv.glmnet(y = Y_extreme, x = X_extreme,
+                     family = "binomial", alpha = 1)
+  
+  gamma = (coef(cvfit5, s = "lambda.min")[2:(d+1)] / coef(cvfit5, s = "lambda.min")[2])
+  
+  fit = glm(Y_label ~ X_label %*% gamma, family = "binomial")
+  
+  res = c(fit[[1]][1], fit[[1]][2] * gamma)
+  SSuLASSO = c(fit[[1]][1], fit[[1]][2] * gamma)
+  
+  deb_res = debias2(beta_fit = t(t(res)), 
                     beta_star,
                     X_label = X_label,
-                    n_lst = n,  tau_lst = 0.001 * 1:1000 * sqrt((log(d)) / n))  
+                    n_lst = n, tau_lst = 0.001 * 1:1000 * sqrt((log(d)) / n))  
   
-  as.numeric(deb_res[[3]])
+  SSuLASSO_test = as.numeric(deb_res[[3]])
+  SSuLASSO_cover = as.numeric(deb_res[[4]])
+  SSuLASSO_deb = as.numeric(deb_res[[1]])
+  SSuLASSO_var = as.numeric(deb_res[[2]])
   
-  IPD_test=as.numeric(c(deb_res[[3]][1], deb_res[[3]][-1][index]))
-  
-  IPD_cover=as.numeric(c(deb_res[[4]][1], deb_res[[4]][-1][index]))
-  
-  IPD_deb=as.numeric(c(deb_res[[1]][1], deb_res[[1]][-1][index]))
-  
-  IPD_var=as.numeric(c(deb_res[[2]][1], deb_res[[2]][-1][index]))
-
   return(list(
-    IPD, IPD_test, IPD_cover, IPD_deb, IPD_var
+    SSuLASSO, SSuLASSO_test, SSuLASSO_cover, SSuLASSO_deb, SSuLASSO_var
   ))
   
+}  
+
+
+
+SASH_wo_stepI <- function(X_lst, S_lst) {
+  final = NULL
+  Grad = Hess = NULL
+  beta_debias = NULL
+  variance = NULL
+  lambda_final = sigma.square_final = NULL
+  
+  for(m in 1:M) {
+    cat("m =", m, "\n")
+    X_m = X_lst[[m]]
+    S_m = S_lst[[m]]
+    
+    cat("iter", iter, "\n")
+    
+    beta = c(1, rep(0, d - 1))
+    beta_pool = NULL
+    
+    for(t in 1:iter) {
+      cat("t =", t, "\n")
+      
+      BIC_step2 = NULL
+      beta_step2 = NULL
+      h_lst = c((log(N_lst[m]) / N_lst[m])^(1/5))
+      
+      if(t == 1) {
+        h = h_lst[1]
+        A = apply(X_lst[[m]], 1, function(o) { f_hat(X_lst[[m]], o, beta, S_lst[[m]], h) })
+        B = apply(X_lst[[m]], 1, function(o) { f_hat_grad(X_lst[[m]], o, beta, S_lst[[m]], h) })
+        
+        if(m <= (M / 2)) {
+          w = rep(1, length(A))
+        } else {
+          w = 1 / (A * (1 - A))
+        }
+        w[abs(w) > 100] = 100
+        sigma.square = mean(w * (S_lst[[m]] - A)^2)
+        sigma.square_final = c(sigma.square_final, sigma.square)
+      }
+      
+      for(j in 1:length(h_lst)) {
+        h = h_lst[j]
+        A = apply(X_m, 1, function(o) { f_hat(X_m, o, beta, S_m, h) })
+        B = apply(X_m, 1, function(o) { f_hat_grad(X_m, o, beta, S_m, h) })
+        
+        if(m <= (M / 2)) {
+          w = rep(1, length(A))
+        } else {
+          w = 1 / (A * (1 - A))
+        }
+        w[abs(w) > 100] = 100
+        
+        cv.result = cv.glmnet(t(B[-1,]), c(S_m - A + t(beta) %*% B - B[1,]), 
+                              weights = w, family = "gaussian",
+                              lambda = 0.005 * (1:120) * sqrt(log(d) / N),
+                              alpha = 1, intercept = FALSE)
+        beta_new = coef(cv.result, s = "lambda.min")[-1]
+        
+        BIC_step2 = c(BIC_step2,
+                      loss_step2(beta_new,
+                                 c(S_lst[[m]] - A + t(beta) %*% B - B[1,]), t(B[-1,]),
+                                 lamb = cv.result$lambda.min / sqrt(log(d) / N)
+                                 , N_lst[[m]], w, sigma.square))
+        beta_step2 = cbind(beta_step2, beta_new)
+      }
+      
+      beta_h = beta_step2[, which.min(BIC_step2)]
+      beta = c(1, beta_h)
+    }
+    
+    Grad[[m]] = grad(X_m, S_m, beta, h, m, N)
+    Hess[[m]] = hess(X_m, S_m, beta, h, m, N)
+    final = cbind(final, beta)
+  }
+  
+  Grad_pool = Hess_pool = 0
+  for(m in 1:M) {
+    Grad_pool = Grad_pool + Grad[[m]]
+    Hess_pool = Hess_pool + Hess[[m]]
+  }
+  
+  vec = eigen(Hess_pool[-1, -1])$vectors
+  value = eigen(Hess_pool[-1, -1])$values
+  value[abs(value) < 1e-10] = 0
+  
+  XX = diag(sqrt(value)) %*% t(vec)
+  YY = solve(t(XX)) %*% (Grad_pool[-1] - Hess_pool[-1, 1])
+  
+  cv.result = cv.glmnet(XX, YY, family = "gaussian",
+                        alpha = 1, intercept = FALSE)
+  model = glmnet(XX, YY, family = "gaussian", 
+                 lambda = cv.result$lambda.min, intercept = FALSE)
+  
+  beta_dagger = NULL
+  beta_dagger = rbind(beta_dagger, c(1, as.vector(model$beta)))
+  
+  BIC = NULL
+  beta_step3 = NULL
+  for(lambda in 0.0025 * (1:600) * sqrt(log(d) / N)) {
+    model = glmnet(XX, YY, family = "gaussian", 
+                   lambda = lambda, intercept = FALSE)
+    bb = model$beta
+    beta_step3 = cbind(beta_step3, bb)
+    
+    BIC = c(BIC, (length(bb) - sum(abs(bb) < 1e-8)) * log(M * N) +
+              M * N * loss_step3(model$beta, Grad_pool, Hess_pool, lambda, 0, N_lst))
+  }
+  
+  beta_dagger = rbind(beta_dagger, c(1, beta_step3[, which.min(BIC)]))
+  est = c(0, beta_dagger[2, ])
+  
+  return(est)
 }
 
 
